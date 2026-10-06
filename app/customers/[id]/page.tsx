@@ -4,11 +4,14 @@ import { useParams, useRouter } from "next/navigation";
 import { useCustomer, useCustomerEntries } from "@/lib/db/hooks";
 import { calculateBalance } from "@/lib/utils/balance";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { ReminderDialog } from "@/components/customers/ReminderDialog";
+import { useState } from "react";
 
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
   const customerId = params.id as string;
+  const [showReminder, setShowReminder] = useState(false);
 
   const customer = useCustomer(customerId);
   const entries = useCustomerEntries(customerId);
@@ -83,9 +86,25 @@ export default function CustomerDetailPage() {
             <p className="text-xs font-medium mt-1 uppercase tracking-wider">
               {balance > 0 ? "You are owed" : balance < 0 ? "You owe them" : "Settled"}
             </p>
+            {balance > 0 && (
+              <button
+                onClick={() => setShowReminder(true)}
+                className="mt-3 w-full sm:w-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+              >
+                Send Reminder
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {showReminder && (
+        <ReminderDialog
+          customerName={customer.name}
+          balance={balance}
+          onClose={() => setShowReminder(false)}
+        />
+      )}
 
       {/* Transaction History */}
       <h2 className="text-lg font-semibold mb-4">Transaction History</h2>
