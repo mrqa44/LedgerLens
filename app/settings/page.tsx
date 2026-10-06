@@ -71,6 +71,27 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Demo Mode */}
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 rounded-2xl">
+          <h2 className="text-lg font-semibold mb-2">Try Demo Mode</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Populate the app with sample customers and transactions to see how the dashboard and customer pages work without having to scan your own ledgers.
+          </p>
+          <button
+            onClick={async () => {
+              if (window.confirm("This will erase any existing data and replace it with demo data. Proceed?")) {
+                const { loadDemoData } = await import("@/lib/db");
+                await loadDemoData();
+                alert("Demo data loaded! Check out the Dashboard and Customers pages.");
+                window.location.href = "/dashboard";
+              }
+            }}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+          >
+            ✨ Load Sample Data
+          </button>
+        </div>
+
         {/* Danger Zone */}
         <div className="border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 p-6 rounded-2xl">
           <h2 className="text-lg font-semibold text-red-700 dark:text-red-400 mb-2">Danger Zone</h2>

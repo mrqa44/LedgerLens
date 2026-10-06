@@ -67,9 +67,40 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Quick stats — how many pages scanned so far */}
-      <div className="mt-12 text-center text-sm text-gray-400">
-        <p>Your data stays in this browser. Nothing is stored on our servers.</p>
+      {/* Quick stats / Demo options */}
+      <div className="mt-12">
+        <div className="text-center text-sm text-gray-500 mb-6">
+          <p>Your data stays in this browser. Nothing is stored on our servers.</p>
+        </div>
+
+        <div className="max-w-md mx-auto bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 rounded-2xl p-6 text-center">
+          <h3 className="font-medium text-blue-900 dark:text-blue-300 mb-2">Hackathon Demo Mode</h3>
+          <p className="text-sm text-blue-700/80 dark:text-blue-400/80 mb-4">
+            Testing for EurekaDev? Load sample data or try extracting a sample ledger image.
+          </p>
+          <div className="flex flex-col gap-3 sm:flex-row justify-center">
+            <button
+              onClick={async () => {
+                if (window.confirm("Erase all current data and load the demo dataset?")) {
+                  const { loadDemoData } = await import("@/lib/db");
+                  await loadDemoData();
+                  alert("Demo data loaded! Check the Dashboard.");
+                  router.push("/dashboard");
+                }
+              }}
+              className="px-4 py-2 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 text-sm font-medium rounded-xl transition-colors"
+            >
+              Load Demo Dataset
+            </button>
+            <a 
+              href="/samples/ledger1.svg" 
+              download
+              className="px-4 py-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-sm font-medium rounded-xl transition-colors"
+            >
+              Download Sample Image
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );

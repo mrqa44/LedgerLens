@@ -1,0 +1,14 @@
+{
+  "ledger1.jpg": [
+    {
+      "customerName": "Ahmed Khan",
+      "amount": 500,
+      "direction": "credit_given"
+    },
+    {
+      "customerName": "Zainab",
+      "amount": 1000,
+      "direction": "payment_received"
+    }
+  ]
+}

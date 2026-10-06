@@ -68,3 +68,26 @@ export class LedgerLensDB extends Dexie {
 
 /** Singleton database instance used throughout the app. */
 export const db = new LedgerLensDB();
+
+import { demoCustomers, demoEntries } from "./demoData";
+
+export async function loadDemoData() {
+  await db.transaction("rw", db.pages, db.customers, db.entries, async () => {
+    await db.pages.clear();
+    await db.customers.clear();
+    await db.entries.clear();
+
+    const today = new Date();
+    const referenceDate = new Date("2024-10-06T00:00:00Z");
+    const diffTime = today.getTime() - referenceDate.getTime();
+
+    const shiftedEntries = demoEntries.map(e => ({
+      ...e,
+      date: new Date(new Date(e.date).getTime() + diffTime).toISOString(),
+      createdAt: new Date(new Date(e.createdAt).getTime() + diffTime).toISOString()
+    }));
+
+    await db.customers.bulkAdd(demoCustomers);
+    await db.entries.bulkAdd(shiftedEntries as any);
+  });
+}
