@@ -3,8 +3,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
+import { db, type Customer } from "@/lib/db";
+import { findMatchingCustomer } from "@/lib/utils/nameMatch";
 import { ImageViewer } from "@/components/review/ImageViewer";
 import { EntryTable, type ReviewEntry } from "@/components/review/EntryTable";
+import { MergeDialog } from "@/components/review/MergeDialog";
 import type { ProcessedEntry } from "@/lib/ai/schemas";
 
 interface ReviewData {
@@ -13,15 +16,18 @@ interface ReviewData {
   imageDataUrl: string;
 }
 
-/**
- * Review page — shows the original ledger image alongside an editable table
- * of extracted entries. The user can fix errors, approve entries, and save.
- *
- * Data flow:
- * 1. Home page extracts entries → stores in sessionStorage
- * 2. This page reads from sessionStorage and displays for review
- * 3. User edits/approves → "Save All" writes to IndexedDB (Phase 3)
- */
+type DialogAction = 
+  | { type: "merge"; addAlias: boolean }
+  | { type: "create" }
+  | { type: "skip" };
+
+interface MergeDialogState {
+  entryName: string;
+  matchedCustomer: Customer;
+  matchScore: number;
+  resolve: (action: DialogAction) => void;
+}
+
 export default function ReviewPage() {
   const params = useParams();
   const router = useRouter();
@@ -30,6 +36,10 @@ export default function ReviewPage() {
   const [reviewData, setReviewData] = useState<ReviewData | null>(null);
   const [entries, setEntries] = useState<ReviewEntry[]>([]);
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // State for the modal
+  const [dialogState, setDialogState] = useState<MergeDialogState | null>(null);
 
   // Load review data from sessionStorage
   useEffect(() => {
@@ -37,7 +47,6 @@ export default function ReviewPage() {
     const raw = sessionStorage.getItem(key);
 
     if (!raw) {
-      // No data — maybe the user navigated here directly
       router.push("/");
       return;
     }
@@ -46,12 +55,11 @@ export default function ReviewPage() {
       const data: ReviewData = JSON.parse(raw);
       setReviewData(data);
 
-      // Convert ProcessedEntries to ReviewEntries with temp IDs
       setEntries(
         data.entries.map((entry) => ({
           ...entry,
           tempId: nanoid(),
-          approved: !entry.needsReview, // Auto-approve high-confidence entries
+          approved: !entry.needsReview,
         })),
       );
     } catch {
@@ -79,17 +87,109 @@ export default function ReviewPage() {
     setEntries((prev) => prev.map((e) => ({ ...e, approved: true, needsReview: false })));
   }, []);
 
-  const handleSaveAll = useCallback(async () => {
-    // For now, just mark as saved. In Phase 3, this writes to IndexedDB
-    // with customer name matching and linking.
-    setSaved(true);
+  // Helper to await user input from the dialog
+  const promptMerge = (entryName: string, matchedCustomer: Customer, matchScore: number): Promise<DialogAction> => {
+    return new Promise((resolve) => {
+      setDialogState({
+        entryName,
+        matchedCustomer,
+        matchScore,
+        resolve: (action) => {
+          setDialogState(null);
+          resolve(action);
+        },
+      });
+    });
+  };
 
-    // Store the reviewed entries for Phase 3 to pick up
-    sessionStorage.setItem(
-      `reviewed-${pageId}`,
-      JSON.stringify(entries.map(({ tempId, approved, ...entry }) => entry)),
-    );
-  }, [entries, pageId]);
+  const handleSaveAll = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+
+    try {
+      // 1. Filter to approved entries only
+      const approvedEntries = entries.filter((e) => e.approved);
+      if (approvedEntries.length === 0) {
+        setSaved(true);
+        return;
+      }
+
+      // 2. Process sequentially to handle name matching logic properly
+      for (const entry of approvedEntries) {
+        if (!entry.customerName.trim()) continue;
+
+        // Fetch latest customers (needed inside the loop because we might create one during it)
+        const allCustomers = await db.customers.toArray();
+        const match = findMatchingCustomer(entry.customerName, allCustomers);
+
+        let finalCustomerId: string | null = null;
+
+        if (match.customer && match.autoLink) {
+          // It's a confident match
+          finalCustomerId = match.customer.id;
+        } else if (match.customer && match.ambiguous) {
+          // Ambiguous — prompt the user
+          const action = await promptMerge(entry.customerName, match.customer, match.score);
+          
+          if (action.type === "skip") {
+            continue; // Ignore this entry completely
+          } else if (action.type === "merge") {
+            finalCustomerId = match.customer.id;
+            if (action.addAlias) {
+              const newAliases = [...new Set([...match.customer.aliases, entry.customerName.trim()])];
+              await db.customers.update(finalCustomerId, { aliases: newAliases });
+            }
+          } else if (action.type === "create") {
+            // User chose "Different Person"
+            finalCustomerId = nanoid();
+            await db.customers.add({
+              id: finalCustomerId,
+              name: entry.customerName.trim(),
+              aliases: [],
+              createdAt: new Date().toISOString(),
+            });
+          }
+        } else {
+          // No match at all — auto create
+          finalCustomerId = nanoid();
+          await db.customers.add({
+            id: finalCustomerId,
+            name: entry.customerName.trim(),
+            aliases: [],
+            createdAt: new Date().toISOString(),
+          });
+        }
+
+        // Save the ledger entry to DB
+        if (finalCustomerId) {
+          await db.entries.add({
+            id: nanoid(),
+            pageId,
+            customerId: finalCustomerId,
+            date: entry.date,
+            description: entry.description,
+            amount: entry.amount,
+            direction: entry.direction,
+            currency: "PKR", // Could be configurable in settings later
+            confidence: entry.confidence,
+            needsReview: false, // It's approved now
+            rawText: entry.rawText,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      // 3. Mark as saved and clear session storage
+      setSaved(true);
+      sessionStorage.removeItem(`review-${pageId}`);
+      
+    } catch (err) {
+      console.error("Error saving entries:", err);
+      alert("Failed to save some entries. Check console for details.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (!reviewData) {
     return (
@@ -101,6 +201,17 @@ export default function ReviewPage() {
 
   return (
     <div className="container mx-auto max-w-7xl px-4 py-6">
+      {dialogState && (
+        <MergeDialog
+          entryName={dialogState.entryName}
+          matchedCustomer={dialogState.matchedCustomer}
+          matchScore={dialogState.matchScore}
+          onMerge={(customerId, addAlias) => dialogState.resolve({ type: "merge", addAlias })}
+          onCreateNew={() => dialogState.resolve({ type: "create" })}
+          onSkip={() => dialogState.resolve({ type: "skip" })}
+        />
+      )}
+
       {/* Page header */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -113,16 +224,25 @@ export default function ReviewPage() {
         <div className="flex gap-2">
           <button
             onClick={() => router.push("/")}
-            className="px-4 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            disabled={isSaving}
           >
             ← Back
           </button>
           {!saved ? (
             <button
               onClick={handleSaveAll}
-              className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors shadow-sm"
+              disabled={isSaving}
+              className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
             >
-              💾 Save All ({entries.length})
+              {isSaving ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-white/20 border-t-white rounded-full" />
+                  Saving...
+                </>
+              ) : (
+                <>💾 Save All ({entries.filter(e => e.approved).length})</>
+              )}
             </button>
           ) : (
             <button
@@ -136,7 +256,7 @@ export default function ReviewPage() {
       </div>
 
       {/* Warnings */}
-      {reviewData.warnings.length > 0 && (
+      {reviewData.warnings.length > 0 && !saved && (
         <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg">
           <h3 className="font-medium text-amber-800 dark:text-amber-300 text-sm mb-1">
             ⚠️ Warnings
@@ -151,13 +271,18 @@ export default function ReviewPage() {
 
       {/* Saved confirmation */}
       {saved && (
-        <div className="mb-4 p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg text-green-700 dark:text-green-300 text-sm">
-          ✓ Entries saved successfully! Customer matching and balance computation will be available in the next update.
+        <div className="mb-4 p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-xl">
+          <h3 className="text-green-800 dark:text-green-300 font-semibold mb-1">
+            ✓ Entries saved successfully!
+          </h3>
+          <p className="text-green-700 dark:text-green-400 text-sm">
+            Customer balances have been updated. You can now view them on the Customers page.
+          </p>
         </div>
       )}
 
       {/* Main content: image + table side by side (stacked on mobile) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${saved ? 'opacity-50 pointer-events-none' : ''}`}>
         {/* Left: Original image */}
         <div>
           <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
