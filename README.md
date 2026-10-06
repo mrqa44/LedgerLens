@@ -84,7 +84,7 @@ npm install
 Create a `.env.local` file in the root directory:
 ```env
 GEMINI_API_KEY=your_google_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 ### 4. Run the development server

@@ -34,7 +34,7 @@ export class GeminiExtractor implements LedgerExtractor {
       throw new Error("GEMINI_API_KEY environment variable is not set");
     }
     this.client = new GoogleGenAI({ apiKey });
-    this.model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    this.model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
   }
 
   async extract(imageBase64: string, mimeType = "image/jpeg"): Promise<ExtractorResult> {
