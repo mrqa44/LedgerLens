@@ -67,13 +67,17 @@ export class GeminiExtractor implements LedgerExtractor {
             customerName: "Ahmed Khan",
             amount: 500,
             direction: "credit_given",
-            needsReview: false
+            description: "udhaar",
+            confidence: 0.95,
+            rawText: "Ahmed Khan - 500 udhaar"
           },
           {
             customerName: "Zainab",
             amount: 1000,
             direction: "payment_received",
-            needsReview: false
+            description: "paid",
+            confidence: 0.98,
+            rawText: "Zainab - paid 1000"
           }
         ],
         warnings: ["Used offline fallback mode because AI server was busy."]
