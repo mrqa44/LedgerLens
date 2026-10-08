@@ -120,7 +120,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     const message =
       err instanceof Error && err.message.includes("GEMINI_API_KEY")
         ? "AI service is not configured. Please set the GEMINI_API_KEY."
-        : "Failed to extract data from the image. Please try again with a clearer photo.";
+        : err instanceof Error && err.message.includes("503")
+          ? "Google's AI is experiencing high demand. Please wait a moment and try again."
+          : "Failed to extract data from the image. Please try again with a clearer photo.";
 
     return Response.json(
       { success: false, error: message } satisfies ExtractAPIResponse,
